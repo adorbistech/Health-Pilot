@@ -1,11 +1,37 @@
 [build]
   command = "npm run build"
   publish = ".next"
+  # base = "packages/frontend"  # Uncomment if using monorepo/subdirectory
+  # package = "packages/frontend"  # Uncomment for monorepo setups
+
+[build.environment]
+  NODE_ENV = "production"
+  NEXT_PUBLIC_API_URL = "https://api.example.com"  # Public API endpoint
+  NEXT_TELEMETRY_DISABLED = "1"
+  NODE_VERSION = "18"  # Explicit Node.js version
+  # Sensitive variables should be set in Netlify UI:
+  # DATABASE_URL, API_SECRET, etc.
+
+[context.staging.environment]  # Applies to 'staging' branch
+  NEXT_PUBLIC_API_URL = "https://staging.api.example.com"
+
+[context.deploy-preview]  # PR previews
+  command = "npm run build:preview"
+
+[context.deploy-preview.environment]
+  NODE_ENV = "development"
+
+[context.branch-deploy.environment]  # All other branches
+  NODE_ENV = "staging"
 
 [[plugins]]
   package = "@netlify/plugin-nextjs"
+  [plugins.inputs]
+    enableImageOptimizer = true
+    imageQuality = "80"
+    buildCommand = "npm run build"
+    nextRuntime = "serverless"
 
-# Add proper headers configuration
 [[headers]]
   for = "/*"
   [headers.values]
@@ -13,27 +39,74 @@
     X-XSS-Protection = "1; mode=block"
     X-Content-Type-Options = "nosniff"
     Referrer-Policy = "strict-origin-when-cross-origin"
-    Content-Security-Policy = "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:;"
+    Content-Security-Policy = """
+      default-src 'self';
+      script-src 'self' 'unsafe-inline' 'unsafe-eval' *.netlify.app *.google-analytics.com;
+      style-src 'self' 'unsafe-inline' fonts.googleapis.com;
+      img-src 'self' data: blob: https: *.google-analytics.com;
+      font-src 'self' data: fonts.gstatic.com;
+      connect-src 'self' *.google-analytics.com *.analytics.google.com;
+      frame-src 'self' *.youtube-nocookie.com;
+      object-src 'none';
+      base-uri 'self';
+      form-action 'self';
+      upgrade-insecure-requests;
+    """
 
-# Configure redirects properly
+[[redirects]]
+  from = "/blog/*"
+  to = "/posts/:splat"
+  status = 301
+
+[[redirects]]
+  from = "/old-version/*"
+  to = "https://legacy.example.com/:splat"
+  status = 302
+
 [[redirects]]
   from = "/*"
   to = "/index.html"
   status = 200
 
-# Add basic auth during development if needed
-#[[redirects]]
-#  from = "/*"
-#  to = "/index.html"
-#  status = 200
-#  conditions = {Role = ["admin"]}
+[[redirects]]
+  from = "/404"
+  to = "/404.html"
+  status = 404
 
-# Configure Netlify Functions
 [functions]
   directory = "netlify/functions"
-  included_files = ["dist/**"]
+  included_files = ["src/**/*.ts"]
+  node_bundler = "esbuild"
+  # Set in Netlify UI: AWS credentials, API keys, etc.
 
-# Configure Edge Functions
 [edge_functions]
   directory = "netlify/edge-functions"
+  path = "/*"
 
+[dev]
+  framework = "next"
+  targetPort = 3000
+  autoLaunch = true
+  command = "next dev"
+
+[build.caching]
+  enabled = true
+  paths = [
+    "node_modules/.cache",
+    ".next/cache",
+    "public/static",
+    "package-lock.json",
+    "yarn.lock"
+  ]
+
+# For Next.js i18n routing
+[[redirects]]
+  from = "/:lang(en|es|fr)/:path*"
+  to = "/:path?lang=:lang"
+  status = 200
+
+# SSR routes handling
+[[redirects]]
+  from = "/ssr/*"
+  to = "/.netlify/functions/ssr-handler"
+  status = 200
